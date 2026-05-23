@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Trad3wise — *Filings in. Signals out.*
 
-## Getting Started
+A next-generation financial screener built on SEC filings. Track insider trades, institutional flow,
+congressional trades, dilution risk, ETF flows, and market movers in real time — with an AI agent that
+reads every filing for you.
 
-First, run the development server:
+This is a full, deployable scaffold built with Next.js 16, React 19, Tailwind v4, and the Anthropic
+Claude API. It ships with a deterministic **mock data layer** so every screen works out of the box, and
+a clean **data-provider seam** for swapping in real sources.
+
+## Quick start
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
+cp .env.example .env.local   # optional — add ANTHROPIC_API_KEY for live AI
+pnpm dev                     # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The app opens with an access-code gate — click **“Continue in demo mode”** (or enter any code).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## What's inside
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Area | Routes |
+|---|---|
+| Dashboard | `/` |
+| Companies | `/companies`, `/companies/[EXCH:TICKER]/{,financials,filings,news}` |
+| Insiders | `/insiders`, `/insiders/[slug]` |
+| Politicians | `/politicians`, `/politicians/[slug]` |
+| Institutions (13F) | `/institutions`, `/institutions/[slug]` |
+| ETFs | `/etfs`, `/etfs/[EXCH:TICKER]/{,holdings,news}` |
+| SEC Filings | `/sec-filings`, `/sec-filings/[id]` |
+| News | `/news` |
+| AI | `/ai` (chat agent), `/reports` |
+| Watchlist & Alerts | `/watchlist`, `/alerts` |
+| Portfolio | `/portfolio` |
+| Developer & Docs | `/developer`, `/docs` |
+| Account | `/account`, `/settings`, `/referrals`, `/pricing` |
+| Legal | `/terms`, `/privacy` |
 
-## Learn More
+Plus: `⌘K` command palette, live ticker strip, dark theme (Inter + JetBrains Mono), cookie consent,
+access-code/demo gate, dynamic OG image, robots & sitemap.
 
-To learn more about Next.js, take a look at the following resources:
+## Architecture
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Data seam** — every page reads through `src/lib/data/`. Today it returns mock data from
+  `src/lib/mock/`. Implement the same function signatures against real APIs to go live.
+- **AI** — `src/lib/ai.ts` + `/api/ai/*`. Uses Claude when `ANTHROPIC_API_KEY` is set; otherwise returns
+  a clearly-labeled demo response.
+- **UI kit** — `src/components/ui/` (shadcn-style, hand-rolled), charts in `src/components/charts/`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Docs
 
-## Deploy on Vercel
+- `docs/FEATURES.md` — full feature catalog (the spec).
+- `docs/PRD.md` — product requirements.
+- `docs/PLAN.md` — phased implementation plan.
+- `docs/SETUP.md` — **the accounts & APIs you need to provision** (start with Anthropic + SEC EDGAR).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deploy
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Pushes to `github.com/Suede0619/trad3wise` deploy on Vercel. Add the env vars from `.env.example` in
+**Vercel → Settings → Environment Variables**.
+
+> Informational only — not investment advice.
