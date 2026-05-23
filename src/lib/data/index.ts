@@ -7,7 +7,8 @@
  * same signature. See docs/SETUP.md for the accounts/keys required.
  */
 import * as mock from "@/lib/mock/data";
-import { fetchLatestFilings } from "@/lib/edgar";
+import { fetchLatestFilings, fetchCompanyFilings, fetchCompanyFinancials } from "@/lib/edgar";
+import type { Filing } from "@/lib/types";
 
 export const dataSource: "mock" | "live" = process.env.MARKETDATA_API_KEY ? "live" : "mock";
 
@@ -20,7 +21,7 @@ const edgarLive = process.env.EDGAR_LIVE !== "off";
  */
 export async function getLatestFilings(
   limit = 40,
-): Promise<{ filings: import("@/lib/types").Filing[]; source: "edgar" | "mock" }> {
+): Promise<{ filings: Filing[]; source: "edgar" | "mock" }> {
   if (edgarLive) {
     try {
       const filings = await fetchLatestFilings(limit);
@@ -30,6 +31,37 @@ export async function getLatestFilings(
     }
   }
   return { filings: mock.getFilings().slice(0, limit), source: "mock" };
+}
+
+/** A single company's filings — real EDGAR submissions when reachable, else mock. */
+export async function getCompanyFilings(
+  ticker: string,
+  limit = 30,
+): Promise<{ filings: Filing[]; source: "edgar" | "mock" }> {
+  if (edgarLive) {
+    try {
+      const filings = await fetchCompanyFilings(ticker, limit);
+      if (filings.length) return { filings, source: "edgar" };
+    } catch {
+      /* fall back */
+    }
+  }
+  return { filings: mock.getFilings().filter((f) => f.ticker === ticker), source: "mock" };
+}
+
+/** A company's annual financials — real XBRL company facts when available, else mock. */
+export async function getCompanyFinancials(
+  ticker: string,
+): Promise<{ rows: ReturnType<typeof mock.getFinancials>; source: "edgar" | "mock" }> {
+  if (edgarLive) {
+    try {
+      const rows = await fetchCompanyFinancials(ticker);
+      if (rows.length >= 2) return { rows, source: "edgar" };
+    } catch {
+      /* fall back */
+    }
+  }
+  return { rows: mock.getFinancials(ticker), source: "mock" };
 }
 
 // Companies

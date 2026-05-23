@@ -118,3 +118,134 @@ export async function fetchLatestFilings(limit = 40): Promise<Filing[]> {
   if (!filings.length) throw new Error("EDGAR: no entries parsed");
   return filings;
 }
+
+// ─── Ticker → CIK resolution ──────────────────────────────────────────────
+async function fetchTickerMap(): Promise<Record<string, { cik: string; name: string }>> {
+  const res = await fetch("https://www.sec.gov/files/company_tickers.json", {
+    headers: { "User-Agent": UA },
+    next: { revalidate: 86400 }, // 24h
+  });
+  if (!res.ok) throw new Error(`EDGAR tickers ${res.status}`);
+  const json = (await res.json()) as Record<string, { cik_str: number; ticker: string; title: string }>;
+  const map: Record<string, { cik: string; name: string }> = {};
+  for (const k in json) {
+    const e = json[k];
+    map[e.ticker.toUpperCase()] = { cik: String(e.cik_str).padStart(10, "0"), name: e.title };
+  }
+  return map;
+}
+
+export async function resolveCik(ticker: string): Promise<{ cik: string; name: string } | null> {
+  try {
+    const map = await fetchTickerMap();
+    return map[ticker.toUpperCase()] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function accessionUrl(cik: string, accession: string): string {
+  const cikInt = String(parseInt(cik, 10));
+  const noDash = accession.replace(/-/g, "");
+  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${noDash}/${accession}-index.htm`;
+}
+
+/** Fetch a single company's recent filings from the EDGAR submissions API. Throws on failure. */
+export async function fetchCompanyFilings(ticker: string, limit = 30): Promise<Filing[]> {
+  const resolved = await resolveCik(ticker);
+  if (!resolved) throw new Error(`No CIK for ${ticker}`);
+  const res = await fetch(`https://data.sec.gov/submissions/CIK${resolved.cik}.json`, {
+    headers: { "User-Agent": UA },
+    next: { revalidate: 3600 }, // 1h
+  });
+  if (!res.ok) throw new Error(`EDGAR submissions ${res.status}`);
+  const json = await res.json();
+  const r = json.filings?.recent;
+  if (!r?.form?.length) throw new Error("EDGAR: no filings");
+
+  const out: Filing[] = [];
+  for (let i = 0; i < r.form.length && out.length < limit; i++) {
+    const form = normalizeForm(r.form[i]);
+    const accession = r.accessionNumber[i];
+    out.push({
+      id: accession,
+      type: form,
+      ticker: ticker.toUpperCase(),
+      company: resolved.name,
+      title: `${resolved.name} — ${r.form[i]}`,
+      filedAt: new Date(r.filingDate[i] + "T00:00:00Z").toISOString(),
+      summary: FORM_SYNOPSIS[form] ?? `${r.form[i]} filed with the SEC.`,
+      tags: tagsFor(form),
+      url: accessionUrl(resolved.cik, accession),
+      live: true,
+      cik: resolved.cik,
+    });
+  }
+  return out;
+}
+
+// ─── Real financials from XBRL company facts ──────────────────────────────
+export interface FinancialRow {
+  year: string;
+  revenue: number;
+  grossProfit: number;
+  netIncome: number;
+  eps: number;
+  fcf: number;
+  assets: number;
+  liabilities: number;
+}
+
+type Fact = { val: number; fy?: number; fp?: string; form?: string; frame?: string };
+
+function annualByYear(facts: Record<string, { units: Record<string, Fact[]> }>, concepts: string[], unit = "USD"): Record<string, number> {
+  for (const c of concepts) {
+    const arr = facts[c]?.units?.[unit];
+    if (!arr) continue;
+    const byYear: Record<string, number> = {};
+    for (const f of arr) {
+      // Use clean annual XBRL "frames" (e.g. CY2024) from 10-K filings.
+      if (f.frame && /^CY\d{4}$/.test(f.frame) && (f.form === "10-K" || f.form === "10-K/A")) {
+        byYear[f.frame.slice(2)] = f.val;
+      }
+    }
+    if (Object.keys(byYear).length) return byYear;
+  }
+  return {};
+}
+
+export async function fetchCompanyFinancials(ticker: string): Promise<FinancialRow[]> {
+  const resolved = await resolveCik(ticker);
+  if (!resolved) throw new Error(`No CIK for ${ticker}`);
+  const res = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${resolved.cik}.json`, {
+    headers: { "User-Agent": UA },
+    next: { revalidate: 86400 },
+  });
+  if (!res.ok) throw new Error(`EDGAR facts ${res.status}`);
+  const json = await res.json();
+  const g = json.facts?.["us-gaap"] ?? {};
+
+  const revenue = annualByYear(g, ["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "RevenueFromContractWithCustomerIncludingAssessedTax", "SalesRevenueNet"]);
+  const gross = annualByYear(g, ["GrossProfit"]);
+  const net = annualByYear(g, ["NetIncomeLoss", "ProfitLoss"]);
+  const assets = annualByYear(g, ["Assets"]);
+  const liabilities = annualByYear(g, ["Liabilities"]);
+  const eps = annualByYear(g, ["EarningsPerShareDiluted", "EarningsPerShareBasic"], "USD/shares");
+  const ocf = annualByYear(g, ["NetCashProvidedByUsedInOperatingActivities"]);
+  const capex = annualByYear(g, ["PaymentsToAcquirePropertyPlantAndEquipment"]);
+
+  const years = Object.keys(revenue).length ? Object.keys(revenue) : Object.keys(net);
+  const sorted = years.sort().slice(-4);
+  if (sorted.length < 2) throw new Error("EDGAR: insufficient financial history");
+
+  return sorted.map((y) => ({
+    year: y,
+    revenue: revenue[y] ?? 0,
+    grossProfit: gross[y] ?? 0,
+    netIncome: net[y] ?? 0,
+    eps: eps[y] ?? 0,
+    fcf: ocf[y] != null ? ocf[y] - (capex[y] ?? 0) : 0,
+    assets: assets[y] ?? 0,
+    liabilities: liabilities[y] ?? 0,
+  }));
+}
