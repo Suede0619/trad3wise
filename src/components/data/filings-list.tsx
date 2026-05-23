@@ -14,12 +14,17 @@ export function FilingsList({ filings, showCompany = true }: { filings: Filing[]
         <div key={f.id} className="rounded-lg border border-border bg-card p-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className="font-mono">{f.type}</Badge>
-            {showCompany && (
+            {showCompany && f.ticker && (
               <Link href={`/companies/NYSE:${f.ticker}`} className="font-mono text-sm font-medium hover:text-primary">
                 {f.ticker}
               </Link>
             )}
             <span className="text-sm text-muted-foreground">{f.company}</span>
+            {f.live && (
+              <Badge variant="up">
+                <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-up" /> EDGAR live
+              </Badge>
+            )}
             <span className="ml-auto text-[11px] text-muted-foreground">{timeAgo(f.filedAt)}</span>
           </div>
           <div className="mt-2 flex items-start gap-2">
@@ -32,10 +37,18 @@ export function FilingsList({ filings, showCompany = true }: { filings: Filing[]
             </div>
           )}
           <div className="mt-3 flex gap-3 text-xs">
-            <Link href={`/sec-filings/${f.id}`} className="text-primary hover:underline">Open filing →</Link>
-            <a href={f.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
-              EDGAR <ExternalLink className="h-3 w-3" />
-            </a>
+            {f.live ? (
+              <a href={f.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                Open on EDGAR <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : (
+              <>
+                <Link href={`/sec-filings/${f.id}`} className="text-primary hover:underline">Open filing →</Link>
+                <a href={f.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
+                  EDGAR <ExternalLink className="h-3 w-3" />
+                </a>
+              </>
+            )}
           </div>
         </div>
       ))}

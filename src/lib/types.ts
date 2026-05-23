@@ -61,6 +61,8 @@ export interface Filing {
   summary: string; // AI-generated synopsis
   tags: string[]; // e.g. ROFR, dilution, financing
   url: string; // EDGAR link
+  live?: boolean; // true when sourced live from SEC EDGAR
+  cik?: string; // SEC CIK when known
 }
 
 export type TxnCode = "P" | "S" | "A" | "M" | "G" | "F";

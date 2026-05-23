@@ -20,7 +20,7 @@ Legend: ✅ free tier exists · 💳 paid · 🔑 needs API key · ⚙️ needs 
 ## Tier 2 — core financial data
 | Service | Why | Env var | Notes |
 |---|---|---|---|
-| **SEC EDGAR** ✅⚙️ | SEC filings, Forms 3/4/5 (insiders), 13F (institutions), full-text search | `SEC_USER_AGENT` | No key, but SEC requires a descriptive User-Agent (e.g. `Trad3wise contact@yourdomain.com`). Rate-limit ~10 req/s. This is the backbone data source. |
+| **SEC EDGAR** ✅⚙️ **(WIRED — LIVE)** | SEC filings, Forms 3/4/5 (insiders), 13F (institutions), full-text search | `SEC_USER_AGENT` | No key needed. **Already integrated**: the SEC Filings page + dashboard pull the live EDGAR feed (cached 5 min) and fall back to sample data if unreachable. Set `SEC_USER_AGENT` (e.g. `Trad3wise you@domain.com`) so traffic identifies itself; rate-limit ~10 req/s. Set `EDGAR_LIVE=off` to force sample data. |
 | **Market data** 🔑💳 (pick one) | Real-time/delayed quotes, OHLC, fundamentals/financials, ETF holdings | `MARKETDATA_API_KEY` | Options: **Financial Modeling Prep** (easiest, has financials + ETF holdings), **Polygon.io**, **Finnhub** (✅ free tier), **Tiingo**, **Alpha Vantage** (✅). |
 | **News** 🔑 (pick one) | Market + company news feed, sentiment | `NEWS_API_KEY` | Options: **Marketaux** (✅ finance-focused), **Finnhub news**, **NewsAPI.org**, **Benzinga** (💳). |
 | **Congressional / politician trades** 🔑💳 | Politicians page | `POLITICIAN_API_KEY` | Options: **Quiver Quantitative API**, **Capitol Trades** (scrape/partner), or parse House/Senate PTR disclosures directly (free but messy). |

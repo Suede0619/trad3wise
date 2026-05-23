@@ -7,8 +7,30 @@
  * same signature. See docs/SETUP.md for the accounts/keys required.
  */
 import * as mock from "@/lib/mock/data";
+import { fetchLatestFilings } from "@/lib/edgar";
 
 export const dataSource: "mock" | "live" = process.env.MARKETDATA_API_KEY ? "live" : "mock";
+
+// EDGAR is free (no key), so live filings default ON. Set EDGAR_LIVE=off to force mock.
+const edgarLive = process.env.EDGAR_LIVE !== "off";
+
+/**
+ * Latest filings — real SEC EDGAR feed when reachable, deterministic mock as fallback.
+ * Returns `{ source }` so the UI can show a "live"/"sample" indicator.
+ */
+export async function getLatestFilings(
+  limit = 40,
+): Promise<{ filings: import("@/lib/types").Filing[]; source: "edgar" | "mock" }> {
+  if (edgarLive) {
+    try {
+      const filings = await fetchLatestFilings(limit);
+      return { filings, source: "edgar" };
+    } catch {
+      // fall through to mock on any network/parse failure
+    }
+  }
+  return { filings: mock.getFilings().slice(0, limit), source: "mock" };
+}
 
 // Companies
 export const listCompanies = () => mock.getCompanies();

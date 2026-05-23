@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getMovers, listSignals, listFilings, listNews, listCompanies } from "@/lib/data";
+import { getMovers, listSignals, getLatestFilings, listFilings, listNews, listCompanies } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Stat } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
@@ -11,10 +11,10 @@ import { getSpark } from "@/lib/data";
 import { fmtMoney, fmtPct, changeColor, cn, timeAgo, fmtCompact } from "@/lib/utils";
 import { ArrowUpRight, ArrowDownRight, Activity, Sparkles } from "lucide-react";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
   const { gainers, losers, active } = getMovers();
   const signals = listSignals().slice(0, 12);
-  const filings = listFilings().slice(0, 6);
+  const { filings } = await getLatestFilings(6);
   const news = listNews().slice(0, 5);
   const companies = listCompanies();
 
@@ -111,15 +111,23 @@ export default function DashboardPage() {
             <Link href="/sec-filings" className="text-xs text-primary hover:underline">View all</Link>
           </CardHeader>
           <CardContent className="space-y-1">
-            {filings.map((f) => (
-              <Link key={f.id} href={`/sec-filings/${f.id}`} className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-surface-2">
-                <div className="flex min-w-0 items-center gap-3">
-                  <Badge variant="outline" className="font-mono">{f.type}</Badge>
-                  <span className="truncate text-sm">{f.company}</span>
-                </div>
-                <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo(f.filedAt)}</span>
-              </Link>
-            ))}
+            {filings.map((f) => {
+              const inner = (
+                <>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Badge variant="outline" className="font-mono">{f.type}</Badge>
+                    <span className="truncate text-sm">{f.company}</span>
+                  </div>
+                  <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo(f.filedAt)}</span>
+                </>
+              );
+              const cls = "flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-surface-2";
+              return f.live ? (
+                <a key={f.id} href={f.url} target="_blank" rel="noopener noreferrer" className={cls}>{inner}</a>
+              ) : (
+                <Link key={f.id} href={`/sec-filings/${f.id}`} className={cls}>{inner}</Link>
+              );
+            })}
           </CardContent>
         </Card>
       </div>
