@@ -5,7 +5,8 @@
  * Set SEC_USER_AGENT (e.g. "Trad3wise you@example.com"). Responses are cached with the
  * Next.js fetch cache (revalidate) so we don't hammer EDGAR on every request.
  */
-import type { Filing, FilingType } from "@/lib/types";
+import type { Filing, FilingType, InsiderTransaction, TxnCode } from "@/lib/types";
+import { slugify } from "@/lib/utils";
 
 const UA = process.env.SEC_USER_AGENT || "Trad3wise contact@trad3wise.app";
 const CURRENT_FEED =
@@ -212,6 +213,96 @@ function annualByYear(facts: Record<string, { units: Record<string, Fact[]> }>, 
     if (Object.keys(byYear).length) return byYear;
   }
   return {};
+}
+
+// ─── Real insider transactions (Form 4 XML) ──────────────────────────────
+function rawDocUrl(cik: string, accession: string, primaryDocument: string): string {
+  const cikInt = String(parseInt(cik, 10));
+  const noDash = accession.replace(/-/g, "");
+  const doc = primaryDocument.replace(/^xsl[^/]*\//, ""); // strip XSL-render prefix → raw XML
+  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${noDash}/${doc}`;
+}
+
+function xmlVal(block: string, tag: string): string {
+  const nested = block.match(new RegExp(`<${tag}>\\s*<value>([\\s\\S]*?)</value>`));
+  if (nested) return nested[1].trim();
+  const flat = block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
+  return flat ? flat[1].trim() : "";
+}
+
+function ownerRole(xml: string): string {
+  const title = xmlVal(xml, "officerTitle");
+  if (title) return title;
+  if (/<isDirector>\s*(1|true)/i.test(xml)) return "Director";
+  if (/<isTenPercentOwner>\s*(1|true)/i.test(xml)) return "10% Owner";
+  return "Insider";
+}
+
+async function parseForm4(url: string, filedAt: string, idBase: string): Promise<InsiderTransaction[]> {
+  const res = await fetch(url, { headers: { "User-Agent": UA }, next: { revalidate: 86400 } });
+  if (!res.ok) return [];
+  const xml = await res.text();
+
+  const company = xmlVal(xml, "issuerName") || "Unknown";
+  const ticker = (xmlVal(xml, "issuerTradingSymbol") || "").toUpperCase();
+  const owner = xmlVal(xml, "rptOwnerName") || "Unknown";
+  const role = ownerRole(xml);
+
+  const blocks = xml.match(/<nonDerivativeTransaction>[\s\S]*?<\/nonDerivativeTransaction>/g) ?? [];
+  const out: InsiderTransaction[] = [];
+  blocks.forEach((b, i) => {
+    const shares = Number(xmlVal(b, "transactionShares")) || 0;
+    const price = Number(xmlVal(b, "transactionPricePerShare")) || 0;
+    if (!shares) return;
+    const ad = xmlVal(b, "transactionAcquiredDisposedCode").toUpperCase();
+    const code = (xmlVal(b, "transactionCode") || "P").slice(0, 1) as TxnCode;
+    out.push({
+      id: `${idBase}-${i}`,
+      insider: owner,
+      insiderSlug: slugify(owner),
+      role,
+      ticker,
+      company,
+      type: ad === "A" ? "buy" : "sell",
+      code,
+      shares,
+      price,
+      value: Math.round(shares * price),
+      filedAt,
+      ownedAfter: Number(xmlVal(b, "sharesOwnedFollowingTransaction")) || 0,
+    });
+  });
+  return out;
+}
+
+/** Fetch a company's recent insider (Form 4) transactions from EDGAR. Throws on failure. */
+export async function fetchCompanyInsiderTransactions(ticker: string, limit = 12): Promise<InsiderTransaction[]> {
+  const resolved = await resolveCik(ticker);
+  if (!resolved) throw new Error(`No CIK for ${ticker}`);
+  const res = await fetch(`https://data.sec.gov/submissions/CIK${resolved.cik}.json`, {
+    headers: { "User-Agent": UA },
+    next: { revalidate: 3600 },
+  });
+  if (!res.ok) throw new Error(`EDGAR submissions ${res.status}`);
+  const json = await res.json();
+  const r = json.filings?.recent;
+  if (!r?.form?.length) throw new Error("EDGAR: no filings");
+
+  const jobs: { url: string; filedAt: string; idBase: string }[] = [];
+  for (let i = 0; i < r.form.length && jobs.length < limit; i++) {
+    if (r.form[i] !== "4") continue;
+    jobs.push({
+      url: rawDocUrl(resolved.cik, r.accessionNumber[i], r.primaryDocument[i]),
+      filedAt: new Date(r.filingDate[i] + "T00:00:00Z").toISOString(),
+      idBase: r.accessionNumber[i],
+    });
+  }
+  if (!jobs.length) throw new Error("EDGAR: no Form 4 filings");
+
+  const results = await Promise.all(jobs.map((j) => parseForm4(j.url, j.filedAt, j.idBase).catch(() => [])));
+  const txns = results.flat();
+  if (!txns.length) throw new Error("EDGAR: no parsable transactions");
+  return txns.sort((a, b) => +new Date(b.filedAt) - +new Date(a.filedAt));
 }
 
 export async function fetchCompanyFinancials(ticker: string): Promise<FinancialRow[]> {

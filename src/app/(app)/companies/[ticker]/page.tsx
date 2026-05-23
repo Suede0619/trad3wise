@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getCompany, getPriceSeries, getCompanyFilings, listInsiderTransactions } from "@/lib/data";
+import { getCompany, getPriceSeries, getCompanyFilings, getCompanyInsiders } from "@/lib/data";
 import { parseTicker, fmtMoney, fmtCompact, fmtNum, timeAgo, fmtPct, changeColor, cn } from "@/lib/utils";
 import { PriceChart } from "@/components/charts/price-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,8 @@ export default async function CompanyOverview({ params }: { params: Promise<{ ti
   const series = getPriceSeries(company.ticker);
   const { filings: allFilings } = await getCompanyFilings(company.ticker, 5);
   const filings = allFilings.slice(0, 5);
-  const insider = listInsiderTransactions().filter((t) => t.ticker === company.ticker).slice(0, 5);
+  const { txns: insiderAll, source: insiderSource } = await getCompanyInsiders(company.ticker, 12);
+  const insider = insiderAll.slice(0, 6);
 
   return (
     <div className="grid gap-5 lg:grid-cols-3">
@@ -81,15 +82,25 @@ export default async function CompanyOverview({ params }: { params: Promise<{ ti
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Insider activity</CardTitle></CardHeader>
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle>Insider activity (Form 4)</CardTitle>
+            {insiderSource === "edgar" ? (
+              <Badge variant="up"><span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-up" /> EDGAR</Badge>
+            ) : (
+              <Badge variant="warn">Sample</Badge>
+            )}
+          </CardHeader>
           <CardContent className="space-y-1">
             {insider.length ? insider.map((t) => (
               <Link key={t.id} href={`/insiders/${t.insiderSlug}`} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-surface-2">
                 <div className="min-w-0">
                   <div className="truncate text-xs font-medium">{t.insider}</div>
-                  <div className="text-[11px] text-muted-foreground">{t.role}</div>
+                  <div className="truncate text-[11px] text-muted-foreground">{t.role}</div>
                 </div>
-                <Badge variant={t.type === "buy" ? "up" : "down"}>{t.type}</Badge>
+                <div className="flex shrink-0 items-center gap-2">
+                  {t.value > 0 && <span className="tnum text-[11px] text-muted-foreground">{fmtMoney(t.value, { compact: true })}</span>}
+                  <Badge variant={t.type === "buy" ? "up" : "down"}>{t.type}</Badge>
+                </div>
               </Link>
             )) : <p className="px-2 text-xs text-muted-foreground">No insider activity.</p>}
           </CardContent>

@@ -7,8 +7,8 @@
  * same signature. See docs/SETUP.md for the accounts/keys required.
  */
 import * as mock from "@/lib/mock/data";
-import { fetchLatestFilings, fetchCompanyFilings, fetchCompanyFinancials } from "@/lib/edgar";
-import type { Filing } from "@/lib/types";
+import { fetchLatestFilings, fetchCompanyFilings, fetchCompanyFinancials, fetchCompanyInsiderTransactions } from "@/lib/edgar";
+import type { Filing, InsiderTransaction } from "@/lib/types";
 
 export const dataSource: "mock" | "live" = process.env.MARKETDATA_API_KEY ? "live" : "mock";
 
@@ -80,6 +80,25 @@ export const getFiling = (id: string) => mock.getFiling(id);
 export const listInsiderTransactions = () => mock.getInsiderTransactions();
 export const listInsiders = () => mock.getInsiders();
 export const getInsider = (slug: string) => mock.getInsider(slug);
+
+/** A company's insider (Form 4) transactions — real EDGAR when reachable, else mock. */
+export async function getCompanyInsiders(
+  ticker: string,
+  limit = 12,
+): Promise<{ txns: InsiderTransaction[]; source: "edgar" | "mock" }> {
+  if (edgarLive) {
+    try {
+      const txns = await fetchCompanyInsiderTransactions(ticker, limit);
+      if (txns.length) return { txns, source: "edgar" };
+    } catch {
+      /* fall back */
+    }
+  }
+  return {
+    txns: mock.getInsiderTransactions().filter((t) => t.ticker === ticker),
+    source: "mock",
+  };
+}
 
 // Politicians
 export const listPoliticianTrades = () => mock.getPoliticianTrades();
