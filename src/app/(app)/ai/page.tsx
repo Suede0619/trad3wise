@@ -63,7 +63,7 @@ export default function AIPage() {
   return (
     <div className="mx-auto flex h-[calc(100vh-7rem)] max-w-3xl flex-col">
       <PageHeader title="Filing-Intelligence Agent" description="Ask anything about filings, insiders, 13F holdings, politician trades, and market data.">
-        <Badge variant="primary"><Sparkles className="h-3 w-3" /> Claude-powered</Badge>
+        <Badge variant="primary"><Sparkles className="h-3 w-3" /> Claude Code CLI</Badge>
       </PageHeader>
 
       <Card className="flex flex-1 flex-col overflow-hidden">

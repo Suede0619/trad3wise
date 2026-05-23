@@ -18,7 +18,7 @@ alerts, and a developer API.
 2. Ship a working, deployable Next.js app (Vercel) with a clean data-provider abstraction so real data
    sources can be swapped in later without rewriting UI.
 3. Dark, fast, finance-grade UI (Inter + JetBrains Mono, dense tables, charts, command palette).
-4. AI features that run on the Anthropic Claude API.
+4. AI features that run on the local Claude Code CLI (headless `claude -p`), not the Anthropic API.
 5. Clearly enumerate every external account/API the operator must provision (`docs/SETUP.md`).
 
 ### Non-goals (for the scaffold)

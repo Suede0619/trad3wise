@@ -1,39 +1,37 @@
 import { NextResponse } from "next/server";
-import { getClient, AI_MODEL, SYSTEM_PROMPT, aiEnabled } from "@/lib/ai";
+import { runClaude } from "@/lib/ai";
 import { getFiling } from "@/lib/data";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 120;
 
 export async function POST(req: Request) {
   const { filingId } = (await req.json()) as { filingId: string; ticker?: string };
   const filing = getFiling(filingId);
 
-  if (!aiEnabled) {
+  const prompt = `Produce a concise deep-dive of this SEC filing based ONLY on the metadata below.
+Do not ask for the document or more details — infer typical content for this form type and explain it.
+
+Company: ${filing?.company ?? "a public company"}
+Ticker: ${filing?.ticker ?? "N/A"}
+Form: ${filing?.type ?? "an SEC filing"}
+Synopsis: ${filing?.summary ?? "A filing submitted to the SEC."}
+Tags: ${filing?.tags?.join(", ") || "none"}
+
+Cover: (1) what this form type discloses and why it matters, (2) the likely material provisions
+given the synopsis/tags, (3) dilution/ROFR/financing implications if relevant, and (4) the signal an
+investor would take from it. Keep it to a few short paragraphs.`;
+
+  try {
+    const summary = await runClaude(prompt);
+    return NextResponse.json({ summary });
+  } catch {
     return NextResponse.json({
       summary:
-        `Demo mode (no ANTHROPIC_API_KEY).\n\nA live deep-dive would extract: (1) the material provisions of this ${filing?.type ?? "filing"}, ` +
-        `(2) any dilution / ROFR / financing language, (3) changes vs. the prior period, and (4) the resulting signal with figures.\n\n` +
-        `Add ANTHROPIC_API_KEY to enable (see docs/SETUP.md).\n\nInformational only — not investment advice.`,
+        `Demo mode — the Claude Code CLI isn't reachable from this server.\n\n` +
+        `A live deep-dive would extract the material provisions of this ${filing?.type ?? "filing"}, ` +
+        `any dilution / ROFR / financing language, changes vs. the prior period, and the resulting signal with figures.\n\n` +
+        `Run the app where the \`claude\` CLI is installed and authenticated.\n\nInformational only — not investment advice.`,
     });
-  }
-
-  const client = getClient()!;
-  try {
-    const msg = await client.messages.create({
-      model: AI_MODEL,
-      max_tokens: 700,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: `Produce a concise deep-dive of this SEC filing.\nCompany: ${filing?.company}\nTicker: ${filing?.ticker}\nForm: ${filing?.type}\nKnown synopsis: ${filing?.summary}\nTags: ${filing?.tags.join(", ")}\n\nReturn: material provisions, dilution/ROFR/financing notes, period-over-period changes, and the signal.`,
-        },
-      ],
-    });
-    const text = msg.content.map((c) => (c.type === "text" ? c.text : "")).join("");
-    return NextResponse.json({ summary: text });
-  } catch (err) {
-    return NextResponse.json({ summary: `AI error: ${(err as Error).message}` }, { status: 500 });
   }
 }

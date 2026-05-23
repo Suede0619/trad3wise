@@ -6,7 +6,7 @@ A phased, step-by-step plan. Phase 0–3 are built in this scaffold; Phase 4+ ar
 - **Next.js 16** (App Router, RSC, Server Actions) + **TypeScript**
 - **Tailwind CSS v4** + a small shadcn-style UI kit (`cva`, `tailwind-merge`, `lucide-react`)
 - **recharts** for charts, **cmdk** for the command palette, **date-fns** for dates
-- **Anthropic Claude API** (`@anthropic-ai/sdk`) for AI agent, summaries, reports
+- **Claude Code CLI** (headless `claude -p`) for AI agent, summaries, reports — no API key
 - Data-provider abstraction in `src/lib/data/` (mock now → real later)
 - Deploy on **Vercel**; repo `github.com/Suede0619/trad3wise`
 
@@ -103,5 +103,5 @@ src/
 ## Definition of done for the scaffold
 - `pnpm build` succeeds; `pnpm dev` serves every route with no runtime errors.
 - Every feature in `docs/FEATURES.md` has a visible page or component.
-- AI endpoint works with `ANTHROPIC_API_KEY`, degrades gracefully without it.
+- AI endpoint works via the local `claude` CLI, degrades gracefully where the CLI is absent.
 - Deployed to Vercel from the GitHub remote.

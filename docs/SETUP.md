@@ -12,10 +12,13 @@ Legend: ✅ free tier exists · 💳 paid · 🔑 needs API key · ⚙️ needs 
 - **Vercel account** + this project linked to `github.com/Suede0619/trad3wise` (deploy target).
 - **GitHub repo** `Suede0619/trad3wise` (✅ done, you authorized `gh`).
 
-## Tier 1 — to make AI features real (do this first)
-| Service | Why | Env var | Notes |
+## Tier 1 — AI features (Claude Code CLI, NOT the Anthropic API)
+AI (the filing-intelligence chat agent, filing deep-dives, and research reports) runs on the **local
+Claude Code CLI** (`claude` binary) in headless mode — **no `ANTHROPIC_API_KEY`, no API billing**.
+
+| Requirement | Why | Env var | Notes |
 |---|---|---|---|
-| **Anthropic (Claude API)** 🔑💳 | AI filing-intelligence chat agent, filing summaries, research reports | `ANTHROPIC_API_KEY` | Get from console.anthropic.com. Without it, AI returns a clearly-labeled demo response. Model: `claude-opus-4-7` (or `claude-sonnet-4-6` for cheaper). |
+| **Claude Code CLI** ✅ | Powers all AI features via `claude -p` (headless) | `CLAUDE_MODEL` (default `sonnet`), optional `CLAUDE_CLI_PATH`, `CLAUDE_TIMEOUT_MS` | The `claude` CLI must be **installed + authenticated** on the machine running the Next.js server. Works with `pnpm dev` / `pnpm start` / any self-hosted box. **It is NOT available on Vercel's serverless runtime**, so on the Vercel deploy the AI routes return a clearly-labeled demo reply — run the app locally or self-host for live AI. |
 
 ## Tier 2 — core financial data
 | Service | Why | Env var | Notes |
@@ -44,12 +47,12 @@ Legend: ✅ free tier exists · 💳 paid · 🔑 needs API key · ⚙️ needs 
 ---
 
 ## Minimal `.env.local` to start
-Copy `.env.example` → `.env.local` and fill what you have. The only one needed for a meaningful demo is
-`ANTHROPIC_API_KEY` (everything else falls back to mock data).
+Copy `.env.example` → `.env.local` and fill what you have. Nothing is required — AI uses your local
+`claude` CLI and SEC EDGAR is already live; everything else falls back to mock data.
 
 ```bash
-ANTHROPIC_API_KEY=
-ANTHROPIC_MODEL=claude-opus-4-7
+# AI = local Claude Code CLI (no API key). Run locally/self-hosted for live AI.
+CLAUDE_MODEL=sonnet
 SEC_USER_AGENT="Trad3wise youremail@example.com"
 MARKETDATA_API_KEY=
 NEWS_API_KEY=
@@ -66,7 +69,7 @@ ACCESS_CODE=demo            # access-code gate; "demo" enables demo mode
 ```
 
 ## Recommended order to provision
-1. **Anthropic** — unlocks AI immediately.
+1. **Claude Code CLI** — already gives you AI when running locally/self-hosted (no key).
 2. **SEC EDGAR User-Agent** (free) + **one market-data key** — unlocks the core screeners/financials.
 3. **News** + **politician** data.
 4. **Postgres + Auth** — when you want real accounts/persistence.
