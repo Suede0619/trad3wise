@@ -13,10 +13,11 @@ const actionVariant = {
 } as const;
 
 /**
- * Holdings table. In `live` mode (real 13F data) there is no per-issuer ticker/CUSIP→ticker
- * link and no quarter-over-quarter delta, so those columns are hidden.
+ * Holdings table. Each row links to the company when a ticker is known (mock / ETF data);
+ * real 13F rows only carry the issuer name + CUSIP, so they render as plain text.
+ * `showChange` hides the QoQ/Action columns when no prior-period comparison is available.
  */
-export function HoldingsTable({ holdings, live = false }: { holdings: Holding[]; live?: boolean }) {
+export function HoldingsTable({ holdings, showChange = true }: { holdings: Holding[]; showChange?: boolean }) {
   return (
     <Table>
       <THead>
@@ -25,28 +26,32 @@ export function HoldingsTable({ holdings, live = false }: { holdings: Holding[];
           <th className="text-right">Shares</th>
           <th className="text-right">Value</th>
           <th className="text-right">Weight</th>
-          {!live && <th className="text-right">Δ QoQ</th>}
-          {!live && <th className="text-left">Action</th>}
+          {showChange && <th className="text-right">Δ QoQ</th>}
+          {showChange && <th className="text-left">Action</th>}
         </tr>
       </THead>
       <TBody>
         {holdings.map((h, i) => (
           <TR key={h.ticker || h.company + i}>
             <td>
-              {live || !h.ticker ? (
-                <span className="block max-w-[260px] truncate text-sm">{h.company}</span>
-              ) : (
+              {h.ticker ? (
                 <Link href={`/companies/NYSE:${h.ticker}`} className="block">
                   <span className="font-mono text-sm font-medium">{h.ticker}</span>
                   <span className="block max-w-[200px] truncate text-[11px] text-muted-foreground">{h.company}</span>
                 </Link>
+              ) : (
+                <span className="block max-w-[260px] truncate text-sm">{h.company}</span>
               )}
             </td>
             <td className="text-right tnum">{fmtNum(h.shares)}</td>
             <td className="text-right tnum">{fmtMoney(h.value, { compact: true })}</td>
             <td className="text-right tnum text-muted-foreground">{h.weight.toFixed(1)}%</td>
-            {!live && <td className={cn("text-right tnum", changeColor(h.changePct))}>{fmtPct(h.changePct, 0)}</td>}
-            {!live && <td><Badge variant={actionVariant[h.action]}>{h.action}</Badge></td>}
+            {showChange && (
+              <td className={cn("text-right tnum", changeColor(h.changePct))}>
+                {h.action === "new" ? "new" : fmtPct(h.changePct, 0)}
+              </td>
+            )}
+            {showChange && <td><Badge variant={actionVariant[h.action]}>{h.action}</Badge></td>}
           </TR>
         ))}
       </TBody>

@@ -20,7 +20,9 @@ export default async function InstitutionProfile({ params }: { params: Promise<{
   const holdings = isLive ? live.holdings : inst.topHoldings;
   const aum = isLive ? (live.totalValue ?? inst.aum) : inst.aum;
   const count = isLive ? (live.count ?? inst.holdingsCount) : inst.holdingsCount;
-  const newPos = inst.topHoldings.filter((h) => h.action === "new").length;
+  const showChange = isLive ? Boolean(live.hasPrior) : true;
+  const newPos = holdings.filter((h) => h.action === "new").length;
+  const added = holdings.filter((h) => h.action === "add").length;
 
   return (
     <div className="space-y-5">
@@ -35,23 +37,23 @@ export default async function InstitutionProfile({ params }: { params: Promise<{
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label={isLive ? "13F portfolio value" : "13F AUM"} value={fmtMoney(aum, { compact: true })} />
         <Stat label="Total holdings" value={fmtNum(count)} />
-        {isLive ? (
-          <Stat label="Period" value={live.asOf ?? "—"} />
+        {showChange ? (
+          <Stat label="New / Added (top 25)" value={<span className="text-primary">{newPos} / {added}</span>} />
         ) : (
-          <Stat label="New positions" value={<span className="text-primary">{newPos}</span>} />
+          <Stat label="Period" value={isLive ? (live.asOf ?? "—") : "—"} />
         )}
-        <Stat label="Last filed" value={isLive && live.asOf ? live.asOf : timeAgo(inst.lastFiled)} />
+        <Stat label={isLive ? "Period" : "Last filed"} value={isLive && live.asOf ? live.asOf : timeAgo(inst.lastFiled)} />
       </div>
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>Top holdings</CardTitle>
           <span className="text-xs text-muted-foreground">
-            {isLive ? `Top ${holdings.length} of ${fmtNum(count)} positions` : "by reported value"}
+            {isLive ? `Top ${holdings.length} of ${fmtNum(count)} positions${showChange ? " · vs. prior quarter" : ""}` : "by reported value"}
           </span>
         </CardHeader>
         <CardContent className="p-0">
-          <HoldingsTable holdings={holdings} live={isLive} />
+          <HoldingsTable holdings={holdings} showChange={showChange} />
         </CardContent>
       </Card>
     </div>

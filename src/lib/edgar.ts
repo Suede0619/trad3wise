@@ -357,42 +357,20 @@ export interface InstitutionHoldings {
   totalValue: number;
   count: number;
   asOf: string;
+  hasPrior: boolean;
 }
 
-/** Fetch a filer's most recent 13F-HR holdings (information table XML). Throws on failure. */
-export async function fetchInstitutionHoldings(name: string, top = 25): Promise<InstitutionHoldings> {
-  const cik = await resolveFilerCik(name);
-  if (!cik) throw new Error(`No CIK for ${name}`);
+type Position = { company: string; shares: number; value: number };
 
-  const subs = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
-    headers: { "User-Agent": UA },
-    next: { revalidate: 3600 },
-  });
-  if (!subs.ok) throw new Error(`EDGAR submissions ${subs.status}`);
-  const json = await subs.json();
-  const r = json.filings?.recent;
-  let accession = "";
-  let asOf = "";
-  for (let i = 0; i < (r?.form?.length ?? 0); i++) {
-    if (r.form[i] === "13F-HR") {
-      accession = r.accessionNumber[i];
-      asOf = r.reportDate?.[i] || r.filingDate[i];
-      break;
-    }
-  }
-  if (!accession) throw new Error("EDGAR: no 13F-HR filing");
-
-  const cikInt = String(parseInt(cik, 10));
+/** Parse the information table of a single 13F-HR accession into a CUSIP→position map. */
+async function holdingsForAccession(cikInt: string, accession: string): Promise<Map<string, Position>> {
   const noDash = accession.replace(/-/g, "");
   const base = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${noDash}`;
 
-  // Find the information-table XML (any .xml other than the cover primary_doc.xml).
   const idx = await fetch(`${base}/index.json`, { headers: { "User-Agent": UA }, next: { revalidate: 86400 } });
   if (!idx.ok) throw new Error(`EDGAR index ${idx.status}`);
   const items: { name: string }[] = (await idx.json()).directory?.item ?? [];
-  const candidates = items
-    .map((i) => i.name)
-    .filter((n) => n.endsWith(".xml") && n.toLowerCase() !== "primary_doc.xml");
+  const candidates = items.map((i) => i.name).filter((n) => n.endsWith(".xml") && n.toLowerCase() !== "primary_doc.xml");
 
   let xml = "";
   for (const c of candidates) {
@@ -412,38 +390,88 @@ export async function fetchInstitutionHoldings(name: string, top = 25): Promise<
     return m ? m[1].trim() : "";
   };
 
-  // Aggregate by CUSIP (filers list the same issuer across share classes / managers).
-  const agg = new Map<string, { company: string; shares: number; value: number }>();
-  let totalValue = 0;
+  const agg = new Map<string, Position>();
   for (const t of tables) {
     const cusip = get(t, "cusip");
-    const company = get(t, "nameOfIssuer");
     const value = Number(get(t, "value")) || 0;
     const shares = Number(get(t, "sshPrnamt")) || 0;
     if (!cusip || !value) continue;
-    totalValue += value;
     const prev = agg.get(cusip);
     if (prev) {
       prev.shares += shares;
       prev.value += value;
     } else {
-      agg.set(cusip, { company, shares, value });
+      agg.set(cusip, { company: get(t, "nameOfIssuer"), shares, value });
     }
   }
-  if (!agg.size) throw new Error("EDGAR: empty information table");
+  return agg;
+}
 
-  const holdings: Holding[] = [...agg.values()]
-    .sort((a, b) => b.value - a.value)
+/**
+ * Fetch a filer's latest 13F-HR holdings and, when a prior 13F-HR exists, the
+ * quarter-over-quarter change (new / add / trim / hold) for each position.
+ */
+export async function fetchInstitutionHoldings(name: string, top = 25): Promise<InstitutionHoldings> {
+  const cik = await resolveFilerCik(name);
+  if (!cik) throw new Error(`No CIK for ${name}`);
+
+  const subs = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
+    headers: { "User-Agent": UA },
+    next: { revalidate: 3600 },
+  });
+  if (!subs.ok) throw new Error(`EDGAR submissions ${subs.status}`);
+  const json = await subs.json();
+  const r = json.filings?.recent;
+
+  const accessions: string[] = [];
+  let asOf = "";
+  for (let i = 0; i < (r?.form?.length ?? 0) && accessions.length < 2; i++) {
+    if (r.form[i] === "13F-HR") {
+      if (!accessions.length) asOf = r.reportDate?.[i] || r.filingDate[i];
+      accessions.push(r.accessionNumber[i]);
+    }
+  }
+  if (!accessions.length) throw new Error("EDGAR: no 13F-HR filing");
+
+  const cikInt = String(parseInt(cik, 10));
+  const current = await holdingsForAccession(cikInt, accessions[0]);
+  if (!current.size) throw new Error("EDGAR: empty information table");
+
+  const prior = accessions[1]
+    ? await holdingsForAccession(cikInt, accessions[1]).catch(() => new Map<string, Position>())
+    : new Map<string, Position>();
+  const hasPrior = prior.size > 0;
+
+  let totalValue = 0;
+  for (const p of current.values()) totalValue += p.value;
+
+  const holdings: Holding[] = [...current.entries()]
+    .sort((a, b) => b[1].value - a[1].value)
     .slice(0, top)
-    .map((h) => ({
-      ticker: "",
-      company: h.company,
-      shares: h.shares,
-      value: h.value,
-      weight: Number(((h.value / totalValue) * 100).toFixed(2)),
-      changePct: 0,
-      action: "hold" as const,
-    }));
+    .map(([cusip, h]) => {
+      const before = prior.get(cusip);
+      let action: Holding["action"] = "hold";
+      let changePct = 0;
+      if (hasPrior) {
+        if (!before) {
+          action = "new";
+          changePct = 100;
+        } else if (before.shares > 0) {
+          changePct = Number((((h.shares - before.shares) / before.shares) * 100).toFixed(1));
+          if (changePct > 2) action = "add";
+          else if (changePct < -2) action = "trim";
+        }
+      }
+      return {
+        ticker: "",
+        company: h.company,
+        shares: h.shares,
+        value: h.value,
+        weight: Number(((h.value / totalValue) * 100).toFixed(2)),
+        changePct,
+        action,
+      };
+    });
 
-  return { holdings, totalValue, count: agg.size, asOf };
+  return { holdings, totalValue, count: current.size, asOf, hasPrior };
 }

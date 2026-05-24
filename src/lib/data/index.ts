@@ -117,12 +117,19 @@ export const getInstitution = (slug: string) => mock.getInstitution(slug);
 /** A filer's latest 13F holdings — real EDGAR information table when reachable, else mock. */
 export async function getInstitutionHoldings(
   name: string,
-): Promise<{ holdings: Holding[]; source: "edgar" | "mock"; totalValue?: number; count?: number; asOf?: string }> {
+): Promise<{ holdings: Holding[]; source: "edgar" | "mock"; totalValue?: number; count?: number; asOf?: string; hasPrior?: boolean }> {
   if (edgarLive) {
     try {
       const live = await fetchInstitutionHoldings(name);
       if (live.holdings.length) {
-        return { holdings: live.holdings, source: "edgar", totalValue: live.totalValue, count: live.count, asOf: live.asOf };
+        return {
+          holdings: live.holdings,
+          source: "edgar",
+          totalValue: live.totalValue,
+          count: live.count,
+          asOf: live.asOf,
+          hasPrior: live.hasPrior,
+        };
       }
     } catch {
       /* fall back */
