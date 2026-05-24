@@ -5,7 +5,7 @@
  * Set SEC_USER_AGENT (e.g. "Trad3wise you@example.com"). Responses are cached with the
  * Next.js fetch cache (revalidate) so we don't hammer EDGAR on every request.
  */
-import type { Filing, FilingType, InsiderTransaction, TxnCode } from "@/lib/types";
+import type { Filing, FilingType, InsiderTransaction, TxnCode, Holding } from "@/lib/types";
 import { slugify } from "@/lib/utils";
 
 const UA = process.env.SEC_USER_AGENT || "Trad3wise contact@trad3wise.app";
@@ -339,4 +339,111 @@ export async function fetchCompanyFinancials(ticker: string): Promise<FinancialR
     assets: assets[y] ?? 0,
     liabilities: liabilities[y] ?? 0,
   }));
+}
+
+// ─── Real 13F institutional holdings ──────────────────────────────────────
+/** Resolve an institutional filer's CIK by name via EDGAR company search (type 13F-HR). */
+export async function resolveFilerCik(name: string): Promise<string | null> {
+  const url = `https://www.sec.gov/cgi-bin/browse-edgar?company=${encodeURIComponent(name)}&CIK=&type=13F-HR&action=getcompany&output=atom`;
+  const res = await fetch(url, { headers: { "User-Agent": UA }, next: { revalidate: 86400 } });
+  if (!res.ok) return null;
+  const xml = await res.text();
+  const m = xml.match(/<cik>(\d+)<\/cik>/i);
+  return m ? m[1].padStart(10, "0") : null;
+}
+
+export interface InstitutionHoldings {
+  holdings: Holding[];
+  totalValue: number;
+  count: number;
+  asOf: string;
+}
+
+/** Fetch a filer's most recent 13F-HR holdings (information table XML). Throws on failure. */
+export async function fetchInstitutionHoldings(name: string, top = 25): Promise<InstitutionHoldings> {
+  const cik = await resolveFilerCik(name);
+  if (!cik) throw new Error(`No CIK for ${name}`);
+
+  const subs = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
+    headers: { "User-Agent": UA },
+    next: { revalidate: 3600 },
+  });
+  if (!subs.ok) throw new Error(`EDGAR submissions ${subs.status}`);
+  const json = await subs.json();
+  const r = json.filings?.recent;
+  let accession = "";
+  let asOf = "";
+  for (let i = 0; i < (r?.form?.length ?? 0); i++) {
+    if (r.form[i] === "13F-HR") {
+      accession = r.accessionNumber[i];
+      asOf = r.reportDate?.[i] || r.filingDate[i];
+      break;
+    }
+  }
+  if (!accession) throw new Error("EDGAR: no 13F-HR filing");
+
+  const cikInt = String(parseInt(cik, 10));
+  const noDash = accession.replace(/-/g, "");
+  const base = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${noDash}`;
+
+  // Find the information-table XML (any .xml other than the cover primary_doc.xml).
+  const idx = await fetch(`${base}/index.json`, { headers: { "User-Agent": UA }, next: { revalidate: 86400 } });
+  if (!idx.ok) throw new Error(`EDGAR index ${idx.status}`);
+  const items: { name: string }[] = (await idx.json()).directory?.item ?? [];
+  const candidates = items
+    .map((i) => i.name)
+    .filter((n) => n.endsWith(".xml") && n.toLowerCase() !== "primary_doc.xml");
+
+  let xml = "";
+  for (const c of candidates) {
+    const r2 = await fetch(`${base}/${c}`, { headers: { "User-Agent": UA }, next: { revalidate: 86400 } });
+    if (!r2.ok) continue;
+    const t = await r2.text();
+    if (/<(?:\w+:)?infoTable>/.test(t)) {
+      xml = t;
+      break;
+    }
+  }
+  if (!xml) throw new Error("EDGAR: no information table");
+
+  const tables = xml.match(/<(?:\w+:)?infoTable>[\s\S]*?<\/(?:\w+:)?infoTable>/g) ?? [];
+  const get = (b: string, tag: string) => {
+    const m = b.match(new RegExp(`<(?:\\w+:)?${tag}>([\\s\\S]*?)</(?:\\w+:)?${tag}>`));
+    return m ? m[1].trim() : "";
+  };
+
+  // Aggregate by CUSIP (filers list the same issuer across share classes / managers).
+  const agg = new Map<string, { company: string; shares: number; value: number }>();
+  let totalValue = 0;
+  for (const t of tables) {
+    const cusip = get(t, "cusip");
+    const company = get(t, "nameOfIssuer");
+    const value = Number(get(t, "value")) || 0;
+    const shares = Number(get(t, "sshPrnamt")) || 0;
+    if (!cusip || !value) continue;
+    totalValue += value;
+    const prev = agg.get(cusip);
+    if (prev) {
+      prev.shares += shares;
+      prev.value += value;
+    } else {
+      agg.set(cusip, { company, shares, value });
+    }
+  }
+  if (!agg.size) throw new Error("EDGAR: empty information table");
+
+  const holdings: Holding[] = [...agg.values()]
+    .sort((a, b) => b.value - a.value)
+    .slice(0, top)
+    .map((h) => ({
+      ticker: "",
+      company: h.company,
+      shares: h.shares,
+      value: h.value,
+      weight: Number(((h.value / totalValue) * 100).toFixed(2)),
+      changePct: 0,
+      action: "hold" as const,
+    }));
+
+  return { holdings, totalValue, count: agg.size, asOf };
 }

@@ -7,8 +7,14 @@
  * same signature. See docs/SETUP.md for the accounts/keys required.
  */
 import * as mock from "@/lib/mock/data";
-import { fetchLatestFilings, fetchCompanyFilings, fetchCompanyFinancials, fetchCompanyInsiderTransactions } from "@/lib/edgar";
-import type { Filing, InsiderTransaction } from "@/lib/types";
+import {
+  fetchLatestFilings,
+  fetchCompanyFilings,
+  fetchCompanyFinancials,
+  fetchCompanyInsiderTransactions,
+  fetchInstitutionHoldings,
+} from "@/lib/edgar";
+import type { Filing, InsiderTransaction, Holding } from "@/lib/types";
 
 export const dataSource: "mock" | "live" = process.env.MARKETDATA_API_KEY ? "live" : "mock";
 
@@ -107,6 +113,23 @@ export const getPolitician = (slug: string) => mock.getPolitician(slug);
 // Institutions
 export const listInstitutions = () => mock.getInstitutions();
 export const getInstitution = (slug: string) => mock.getInstitution(slug);
+
+/** A filer's latest 13F holdings — real EDGAR information table when reachable, else mock. */
+export async function getInstitutionHoldings(
+  name: string,
+): Promise<{ holdings: Holding[]; source: "edgar" | "mock"; totalValue?: number; count?: number; asOf?: string }> {
+  if (edgarLive) {
+    try {
+      const live = await fetchInstitutionHoldings(name);
+      if (live.holdings.length) {
+        return { holdings: live.holdings, source: "edgar", totalValue: live.totalValue, count: live.count, asOf: live.asOf };
+      }
+    } catch {
+      /* fall back */
+    }
+  }
+  return { holdings: [], source: "mock" };
+}
 
 // ETFs
 export const listETFs = () => mock.getETFs();
