@@ -14,7 +14,10 @@ import {
   fetchCompanyInsiderTransactions,
   fetchInstitutionHoldings,
 } from "@/lib/edgar";
-import type { Filing, InsiderTransaction, Holding } from "@/lib/types";
+import type { Filing, InsiderTransaction, Holding, Company, NewsArticle, PoliticianTrade } from "@/lib/types";
+import { fetchQuotes, marketDataEnabled } from "@/lib/providers/marketdata";
+import { fetchMarketNews, newsEnabled } from "@/lib/providers/news";
+import { fetchPoliticianTrades, politiciansEnabled } from "@/lib/providers/politicians";
 
 export const dataSource: "mock" | "live" = process.env.MARKETDATA_API_KEY ? "live" : "mock";
 
@@ -72,6 +75,21 @@ export async function getCompanyFinancials(
 
 // Companies
 export const listCompanies = () => mock.getCompanies();
+
+/** Companies enriched with real quotes when MARKETDATA_API_KEY is set, else mock prices. */
+export async function getCompaniesWithQuotes(): Promise<{ companies: Company[]; source: "live" | "mock" }> {
+  const base = mock.getCompanies();
+  if (!marketDataEnabled) return { companies: base, source: "mock" };
+  const quotes = await fetchQuotes(base.map((c) => c.ticker));
+  if (!quotes.size) return { companies: base, source: "mock" };
+  const companies = base.map((c) => {
+    const q = quotes.get(c.ticker.toUpperCase());
+    return q
+      ? { ...c, price: q.price, change: q.change, marketCap: q.marketCap ?? c.marketCap, volume: q.volume ?? c.volume }
+      : c;
+  });
+  return { companies, source: "live" };
+}
 export const getCompany = (exchange: string, ticker: string) => mock.getCompany(exchange, ticker);
 export const findCompany = (ticker: string) => mock.findCompany(ticker);
 export const getFinancials = (ticker: string) => mock.getFinancials(ticker);
@@ -146,3 +164,21 @@ export const getETF = (ticker: string) => mock.getETF(ticker);
 export const listNews = () => mock.getNews();
 export const listSignals = () => mock.getSignals();
 export const getMovers = () => mock.getMovers();
+
+/** Market news — real feed when NEWS_API_KEY is set, else mock. */
+export async function getNewsLive(): Promise<{ articles: NewsArticle[]; source: "live" | "mock" }> {
+  if (newsEnabled) {
+    const articles = await fetchMarketNews();
+    if (articles.length) return { articles, source: "live" };
+  }
+  return { articles: mock.getNews(), source: "mock" };
+}
+
+/** Congressional trades — real feed when POLITICIAN_API_KEY is set, else mock. */
+export async function getPoliticianTradesLive(): Promise<{ trades: PoliticianTrade[]; source: "live" | "mock" }> {
+  if (politiciansEnabled) {
+    const trades = await fetchPoliticianTrades(mock.getCompanies().map((c) => c.ticker));
+    if (trades.length) return { trades, source: "live" };
+  }
+  return { trades: mock.getPoliticianTrades(), source: "mock" };
+}

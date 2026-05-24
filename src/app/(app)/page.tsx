@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getMovers, listSignals, getLatestFilings, listFilings, listNews, listCompanies } from "@/lib/data";
+import { listSignals, getLatestFilings, listFilings, getNewsLive, getCompaniesWithQuotes } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Stat } from "@/components/ui/stat";
 import { Badge } from "@/components/ui/badge";
@@ -12,11 +12,14 @@ import { fmtMoney, fmtPct, changeColor, cn, timeAgo, fmtCompact } from "@/lib/ut
 import { ArrowUpRight, ArrowDownRight, Activity, Sparkles } from "lucide-react";
 
 export default async function DashboardPage() {
-  const { gainers, losers, active } = getMovers();
+  const { companies } = await getCompaniesWithQuotes();
+  const byChange = [...companies].sort((a, b) => b.change - a.change);
+  const gainers = byChange.slice(0, 5);
+  const losers = byChange.slice(-5).reverse();
+  const active = [...companies].sort((a, b) => b.volume - a.volume).slice(0, 5);
   const signals = listSignals().slice(0, 12);
   const { filings } = await getLatestFilings(6);
-  const news = listNews().slice(0, 5);
-  const companies = listCompanies();
+  const news = (await getNewsLive()).articles.slice(0, 5);
 
   const ticks = companies.slice(0, 14).map((c) => ({
     ticker: c.ticker,
